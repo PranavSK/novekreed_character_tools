@@ -186,6 +186,15 @@ class NCT_AddonProperties(PropertyGroup):
         size=3,
         default=(False, False, True)
     )
+    rootmotion_use_rest_pose: BoolProperty(
+        name="Use Rest Pose",
+        description=(
+            "Use rest pose as reference for calculating the change of" +
+            " transforms for the hip. This is useful when animation starts" +
+            " in air etc."
+        ),
+        default=False
+    )
 
 
 classes = (

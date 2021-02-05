@@ -130,18 +130,23 @@ class NCT_OT_add_rootmotion(Operator):
         root_name = tool.rootmotion_name
         hip_bone = target_armature.pose.bones[hips_name]
         root_bone = target_armature.pose.bones[root_name]
-        # Get the TPose for reference initially
-        # This will get proper deltas when the action starts from a pose
-        # location diff from TPose
-        hip_tpose_loc, hip_tpose_rot, _ = \
-            target_armature.data.bones[hips_name].matrix_local.decompose()
-        root_tpose_mtx = target_armature.data.bones[root_name].matrix_local
 
         # Set the scene for curr actions
         start_frame = tool.rootmotion_start_frame
         target_armature.animation_data.action = action
         end_frame = int(target_armature.animation_data.action.frame_range[1])
         scene.frame_end = end_frame
+
+        if tool.rootmotion_use_rest_pose:
+            # Get the TPose for reference initially
+            # This will get proper deltas when the action starts from a pose
+            # location diff from TPose
+            hip_tpose_loc, hip_tpose_rot, _ = \
+                target_armature.data.bones[hips_name].matrix_local.decompose()
+        else:
+            scene.frame_set(start_frame)
+            hip_tpose_loc, hip_tpose_rot, _ = hip_bone.matrix.decompose()
+        root_tpose_mtx = target_armature.data.bones[root_name].matrix_local
 
         # Extract the deltas from hip bone frames
         loc_delta_mtxs = []
@@ -174,22 +179,21 @@ class NCT_OT_add_rootmotion(Operator):
             if not tool.rootmotion_use_rotation[2]:  # Z axis
                 rot_delta[2] = 0
             rot_delta_mtx = rot_delta.to_matrix().to_4x4()
-            self.report({'INFO'}, "delta: - {}".format(rot_delta_mtx))
 
             loc_delta_mtxs.append(loc_delta_mtx)
             rot_delta_mtxs.append(rot_delta_mtx)
 
             # Note: for proper matrix multiplication ordering apply world-
             # space delta translations 1st, since their rotations are 0, then
-            # the current matrix and finally the delta rotations. This is
+            # the delta rotations and finally the current matrix. This is
             # because translations are applied in the new rotational basis of
             # the matrix.
 
             # Apply to hip 1st then to root. Since hip is a child of root.
             hip_bone.matrix = (
                 loc_delta_mtx.inverted() @
-                hip_bone.matrix @
-                rot_delta_mtx.inverted()
+                rot_delta_mtx.inverted() @
+                hip_bone.matrix
             )
             hip_bone.keyframe_insert(data_path='location')
             hip_bone.keyframe_insert(data_path='rotation_quaternion')
@@ -200,8 +204,8 @@ class NCT_OT_add_rootmotion(Operator):
         for frame in range(start_frame, end_frame + 1):
             root_bone.matrix = (
                 loc_delta_mtxs[index] @
-                root_tpose_mtx @
-                rot_delta_mtxs[index]
+                rot_delta_mtxs[index] @
+                root_tpose_mtx
             )
             root_bone.keyframe_insert(data_path='location', frame=frame)
             root_bone.keyframe_insert(
