@@ -57,6 +57,7 @@ class NCT_PT_main_panel(Panel, ObjectButtonsPanel):
         box.prop(tool, "rootmotion_use_translation", toggle=True)
         if tool.rootmotion_use_translation[2]:
             box.prop(tool, "rootmotion_on_ground", toggle=True)
+        box.prop(tool, "rootmotion_use_rotation", toggle=True)
 
         box.separator()
         box.column(align=True).prop(tool, "rootmotion_name", text="")
@@ -100,7 +101,7 @@ class ACTION_UL_character_actions(UIList):
         if item.get('is_nct_processed'):
             layout.prop(item, "name", text="", emboss=False, icon='ANIM_DATA')
         else:
-            layout.label("{} - Unprocessed".format(item.name))
+            layout.label("{} - Unprocessed".format(text=item.name))
 
 
 class NCT_PT_trim_animation_utils(bpy.types.Panel, ObjectButtonsPanel):

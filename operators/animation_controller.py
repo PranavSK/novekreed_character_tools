@@ -1,9 +1,11 @@
 import bpy
 
 from bpy.types import Operator
-from ..utils import push_to_nla_stash, validate_target_armature
-
-TPOSE_ACTION_NAME = "T-Pose"
+from ..utils import (
+    push_to_nla_stash,
+    validate_target_armature,
+    TPOSE_ACTION_NAME
+)
 
 
 class NCT_OT_animation_play(Operator):

@@ -176,6 +176,16 @@ class NCT_AddonProperties(PropertyGroup):
         description="Keep the Z axis +ve for rootmotion bake.",
         default=True
     )
+    rootmotion_use_rotation: BoolVectorProperty(
+        name="Bake Rotation",
+        description=(
+            "Process the rotation about selected axes" +
+            " for rootmotion bake."
+        ),
+        subtype='XYZ',
+        size=3,
+        default=(False, False, True)
+    )
 
 
 classes = (

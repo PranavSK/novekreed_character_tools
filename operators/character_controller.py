@@ -5,10 +5,12 @@ from bpy.props import (StringProperty, CollectionProperty)
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
 
-from ..utils import (push_to_nla_stash, validate_target_armature)
-
-TPOSE_ACTION_NAME = "T-Pose"
-MIXAMO_GROUP_NAME = "Mixamo"
+from ..utils import (
+    push_to_nla_stash,
+    validate_target_armature,
+    TPOSE_ACTION_NAME,
+    MIXAMO_GROUP_NAME
+)
 
 
 def xform_mixamo_action(action, hip_bone_name, scale_to_apply):
@@ -262,6 +264,7 @@ class NCT_OT_armature_join_mesh(Operator):
             return {'CANCELLED'}
 
         target_armature = tool.target_object
+        context.view_layer.objects.active = target_armature
         current_mode = context.object.mode
         bpy.ops.object.mode_set(mode='OBJECT')
         mesh_to_join = None

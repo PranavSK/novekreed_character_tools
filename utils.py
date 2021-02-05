@@ -1,5 +1,8 @@
 import bpy
 
+TPOSE_ACTION_NAME = "T-Pose"
+MIXAMO_GROUP_NAME = "Mixamo"
+
 
 def validate_target_armature(scene) -> bool:
     """Validate if the target saved is existing."""
