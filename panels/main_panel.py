@@ -102,7 +102,7 @@ class ACTION_UL_character_actions(UIList):
         if item.get('is_nct_processed'):
             layout.prop(item, "name", text="", emboss=False, icon='ANIM_DATA')
         else:
-            layout.label("{} - Unprocessed".format(item.name))
+            layout.label(text="{} - Unprocessed".format(item.name))
 
 
 class NCT_PT_trim_animation_utils(bpy.types.Panel, ObjectButtonsPanel):

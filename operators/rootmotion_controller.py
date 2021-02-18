@@ -21,7 +21,6 @@ class NCT_OT_add_rootbone(Operator):
         target_armature = tool.target_object
         rootmotion_root_name = tool.rootmotion_name
         start_frame = tool.rootmotion_start_frame
-        rootmotion_bone_offset = 1
         hips_name = tool.rootmotion_hip_bone
 
         # Bones
@@ -41,16 +40,10 @@ class NCT_OT_add_rootbone(Operator):
             if rootmotion_root_name in editbones:
                 self.report({'INFO'}, 'Root Bone Exists.')
                 return {'FINISHED'}
-
-            hips_bone = editbones[hips_name]
             # Bone Setup
             rootmotion_bone = editbones.new(rootmotion_root_name)
-            rootmotion_bone.head = hips_bone.head
-            rootmotion_bone.head.y -= rootmotion_bone_offset
-            rootmotion_bone.head_radius = hips_bone.head_radius
-            rootmotion_bone.tail = hips_bone.tail
-            rootmotion_bone.tail.y -= rootmotion_bone_offset
-            rootmotion_bone.tail_radius = hips_bone.tail_radius
+            rootmotion_bone.head = (0.0, 0.0, 0.0)
+            rootmotion_bone.tail = (0.0, 0.0, 0.2)
 
             editbones[hips_name].parent = rootmotion_bone
 
@@ -183,16 +176,15 @@ class NCT_OT_add_rootmotion(Operator):
             loc_delta_mtxs.append(loc_delta_mtx)
             rot_delta_mtxs.append(rot_delta_mtx)
 
-            # Note: for proper matrix multiplication ordering apply world-
-            # space delta translations 1st, since their rotations are 0, then
-            # the delta rotations and finally the current matrix. This is
-            # because translations are applied in the new rotational basis of
-            # the matrix.
+            # Note: for proper matrix multiplication ordering apply the
+            # inverse of both deltas combined and then the bone matrix
+            # transforms.
+            # This is because translations are applied in the new rotational
+            # basis of the matrix.
 
             # Apply to hip 1st then to root. Since hip is a child of root.
             hip_bone.matrix = (
-                loc_delta_mtx.inverted() @
-                rot_delta_mtx.inverted() @
+                (loc_delta_mtx @ rot_delta_mtx).inverted() @
                 hip_bone.matrix
             )
             hip_bone.keyframe_insert(data_path='location')
