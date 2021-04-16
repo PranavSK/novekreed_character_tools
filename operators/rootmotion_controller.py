@@ -1,9 +1,53 @@
 import bpy
-import mathutils
+from math import pi
+from mathutils import Vector, Quaternion
 
 from bpy.types import Operator
 
 from ..utils import validate_target_armature
+
+
+def get_all_quaternion_curves(object):
+    """returns all quaternion fcurves of object/bones packed together in a touple per object/bone"""
+    fcurves = object.animation_data.action.fcurves
+    if fcurves.find('rotation_quaternion'):
+        yield (fcurves.find('rotation_quaternion', index=0), fcurves.find('rotation_quaternion', index=1), fcurves.find('rotation_quaternion', index=2), fcurves.find('rotation_quaternion', index=3))
+    if object.type == 'ARMATURE':
+        for bone in object.pose.bones:
+            data_path = 'pose.bones["' + bone.name + '"].rotation_quaternion'
+            if fcurves.find(data_path):
+                yield (fcurves.find(data_path, index=0), fcurves.find(data_path, index=1),fcurves.find(data_path, index=2),fcurves.find(data_path, index=3))
+
+
+def quaternion_cleanup(object, prevent_flips=True, prevent_inverts=True):
+    """fixes signs in quaternion fcurves swapping from one frame to another"""
+    for curves in get_all_quaternion_curves(object):
+        start = int(min((curves[i].keyframe_points[0].co.x for i in range(4))))
+        end = int(max((curves[i].keyframe_points[-1].co.x for i in range(4))))
+        for curve in curves:
+            for i in range(start, end):
+                curve.keyframe_points.insert(i, curve.evaluate(i)).interpolation = 'LINEAR'
+        zipped = list(zip(
+            curves[0].keyframe_points,
+            curves[1].keyframe_points,
+            curves[2].keyframe_points,
+            curves[3].keyframe_points))
+        for i in range(1, len(zipped)):
+            if prevent_flips:
+                rot_prev = Quaternion((zipped[i-1][j].co.y for j in range(4)))
+                rot_cur = Quaternion((zipped[i][j].co.y for j in range(4)))
+                diff = rot_prev.rotation_difference(rot_cur)
+                if abs(diff.angle - pi) < 0.5:
+                    rot_cur.rotate(Quaternion(diff.axis, pi))
+                    for j in range(4):
+                        zipped[i][j].co.y = rot_cur[j]
+            if prevent_inverts:
+                change_amount = 0.0
+                for j in range(4):
+                    change_amount += abs(zipped[i-1][j].co.y - zipped[i][j].co.y)
+                if change_amount > 1.0:
+                    for j in range(4):
+                        zipped[i][j].co.y *= -1.0
 
 
 class NCT_OT_add_rootbone(Operator):
@@ -43,7 +87,7 @@ class NCT_OT_add_rootbone(Operator):
             # Bone Setup
             rootmotion_bone = editbones.new(rootmotion_root_name)
             rootmotion_bone.head = (0.0, 0.0, 0.0)
-            rootmotion_bone.tail = (0.0, 0.0, 0.2)
+            rootmotion_bone.tail = (0.0, 0.0, 10.0)
 
             editbones[hips_name].parent = rootmotion_bone
 
@@ -62,7 +106,7 @@ class NCT_OT_add_rootbone(Operator):
 class NCT_OT_add_rootmotion(Operator):
     bl_idname = "nct.add_rootmotion"
     bl_label = "Add Root Motion"
-    bl_description = "Adds Root Motion Bone To Animations"
+    bl_description = "Adds Root Motion to Animations"
 
     def execute(self, context):
         scene = context.scene
@@ -88,23 +132,21 @@ class NCT_OT_add_rootmotion(Operator):
 
         if is_rootmotion_all:
             for action in bpy.data.actions:
-                if action.get('is_nct_processed'):
-                    self.bake_rootmotion(
-                        scene,
-                        tool,
-                        target_armature,
-                        action
-                    )
-        else:
-            idx = tool.selected_action_index
-            action = bpy.data.actions[idx]
-            if action.get('is_nct_processed'):
                 self.bake_rootmotion(
                     scene,
                     tool,
                     target_armature,
                     action
                 )
+        else:
+            idx = tool.selected_action_index
+            action = bpy.data.actions[idx]
+            self.bake_rootmotion(
+                scene,
+                tool,
+                target_armature,
+                action
+            )
 
         scene.frame_set(frame_curr)
         bpy.ops.object.mode_set(mode=current_mode)
@@ -119,6 +161,9 @@ class NCT_OT_add_rootmotion(Operator):
         target_armature,
         action
     ):
+        if not action.get('is_nct_processed') or action.get('has_root_motion'):
+            return
+        
         hips_name = tool.rootmotion_hip_bone
         root_name = tool.rootmotion_name
         hip_bone = target_armature.pose.bones[hips_name]
@@ -130,79 +175,109 @@ class NCT_OT_add_rootmotion(Operator):
         end_frame = int(target_armature.animation_data.action.frame_range[1])
         scene.frame_end = end_frame
 
-        if tool.rootmotion_use_rest_pose:
-            # Get the TPose for reference initially
-            # This will get proper deltas when the action starts from a pose
-            # location diff from TPose
-            hip_tpose_loc, hip_tpose_rot, _ = \
-                target_armature.data.bones[hips_name].matrix_local.decompose()
-        else:
-            scene.frame_set(start_frame)
-            hip_tpose_loc, hip_tpose_rot, _ = hip_bone.matrix.decompose()
-        root_tpose_mtx = target_armature.data.bones[root_name].matrix_local
+        hip_world_loc = target_armature.matrix_local @ hip_bone.bone.head_local
+        z_offset = hip_world_loc[2]
 
-        # Extract the deltas from hip bone frames
-        loc_delta_mtxs = []
-        rot_delta_mtxs = []
-        for frame in range(start_frame, end_frame + 1):
-            # Set the frame to get the save xforms of the bones.
-            scene.frame_set(frame)
-            # Get the change in hip location along required axes
-            hip_curr_loc, hip_curr_rot, _ = hip_bone.matrix.decompose()
-            loc_delta = hip_curr_loc - hip_tpose_loc
-            if not tool.rootmotion_use_translation[0]:  # X axis
-                loc_delta[0] = 0
-            if not tool.rootmotion_use_translation[1]:  # Y axis
-                loc_delta[1] = 0
-            if not tool.rootmotion_use_translation[2]:  # Z axis
-                loc_delta[2] = 0
-            if (
-                tool.rootmotion_on_ground and
-                tool.rootmotion_use_translation[2] and
-                loc_delta[2] < 0
-            ):
-                loc_delta[2] = 0
-            loc_delta_mtx = mathutils.Matrix.Translation(loc_delta)
-            # Get the change in rotation about the selected axes
-            rot_delta = (hip_curr_rot @ hip_tpose_rot.inverted()).to_euler()
-            if not tool.rootmotion_use_rotation[0]:  # X axis
-                rot_delta[0] = 0
-            if not tool.rootmotion_use_rotation[1]:  # Y axis
-                rot_delta[1] = 0
-            if not tool.rootmotion_use_rotation[2]:  # Z axis
-                rot_delta[2] = 0
-            rot_delta_mtx = rot_delta.to_matrix().to_4x4()
+        # Create helper to bake the root motion
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.empty_add(type='ARROWS', radius=1, align='WORLD', location=(0, 0, 0))
+        root_baker = bpy.context.object
+        root_baker.name = "root_baker"
+        root_baker.rotation_mode = 'QUATERNION'
 
-            loc_delta_mtxs.append(loc_delta_mtx)
-            rot_delta_mtxs.append(rot_delta_mtx)
+        if tool.rootmotion_use_translation[2]: # use Z axis
+            bpy.ops.object.constraint_add(type='COPY_LOCATION')
+            bpy.context.object.constraints["Copy Location"].name = "Copy Z_Loc"
+            bpy.context.object.constraints["Copy Z_Loc"].target = target_armature
+            bpy.context.object.constraints["Copy Z_Loc"].subtarget = hips_name
+            bpy.context.object.constraints["Copy Z_Loc"].use_x = False
+            bpy.context.object.constraints["Copy Z_Loc"].use_y = False
+            bpy.context.object.constraints["Copy Z_Loc"].use_z = True
+            bpy.context.object.constraints["Copy Z_Loc"].use_offset = True
+            
+            root_baker.location[2] = -z_offset
+            if tool.rootmotion_on_ground:
+                bpy.ops.object.constraint_add(type='LIMIT_LOCATION')
+                bpy.context.object.constraints["Limit Location"].use_min_z = True
+        
+        bpy.ops.object.constraint_add(type='COPY_LOCATION')
+        bpy.context.object.constraints["Copy Location"].target = target_armature
+        bpy.context.object.constraints["Copy Location"].subtarget = hips_name
+        bpy.context.object.constraints["Copy Location"].use_x = tool.rootmotion_use_translation[0]
+        bpy.context.object.constraints["Copy Location"].use_y = tool.rootmotion_use_translation[1]
+        bpy.context.object.constraints["Copy Location"].use_z = False
 
-            # Note: for proper matrix multiplication ordering apply the
-            # inverse of both deltas combined and then the bone matrix
-            # transforms.
-            # This is because translations are applied in the new rotational
-            # basis of the matrix.
+        bpy.ops.object.constraint_add(type='COPY_ROTATION')
+        bpy.context.object.constraints["Copy Rotation"].target = target_armature
+        bpy.context.object.constraints["Copy Rotation"].subtarget = hips_name
+        bpy.context.object.constraints["Copy Rotation"].use_y = False
+        bpy.context.object.constraints["Copy Rotation"].use_x = False
+        bpy.context.object.constraints["Copy Rotation"].use_z = tool.rootmotion_use_rotation
 
-            # Apply to hip 1st then to root. Since hip is a child of root.
-            hip_bone.matrix = (
-                (loc_delta_mtx @ rot_delta_mtx).inverted() @
-                hip_bone.matrix
-            )
-            hip_bone.keyframe_insert(data_path='location')
-            hip_bone.keyframe_insert(data_path='rotation_quaternion')
-            hip_bone.keyframe_insert(data_path='scale')
+        bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
+                clear_constraints=True, clear_parents=False, use_current_action=False, bake_types={'OBJECT'})
+        
+        quaternion_cleanup(root_baker)
 
-        # Next apply the mtxs to the root bone
-        index = 0
-        for frame in range(start_frame, end_frame + 1):
-            root_bone.matrix = (
-                loc_delta_mtxs[index] @
-                rot_delta_mtxs[index] @
-                root_tpose_mtx
-            )
-            root_bone.keyframe_insert(data_path='location', frame=frame)
-            root_bone.keyframe_insert(
-                data_path='rotation_quaternion',
-                frame=frame
-            )
-            root_bone.keyframe_insert(data_path='scale', frame=frame)
-            index += 1
+        # Create helper to bake hipmotion in Worldspace
+        bpy.ops.object.empty_add(type='ARROWS', radius=1, align='WORLD', location=(0, 0, 0))
+        hips_baker = bpy.context.object
+        hips_baker.name = "hips_baker"
+        hips_baker.rotation_mode = 'QUATERNION'
+
+        bpy.ops.object.constraint_add(type='COPY_LOCATION')
+        bpy.context.object.constraints["Copy Location"].target = target_armature
+        bpy.context.object.constraints["Copy Location"].subtarget = hips_name
+
+        bpy.ops.object.constraint_add(type='COPY_ROTATION')
+        bpy.context.object.constraints["Copy Rotation"].target = target_armature
+        bpy.context.object.constraints["Copy Rotation"].subtarget = hips_name
+
+        bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
+                clear_constraints=True, clear_parents=False, use_current_action=False, bake_types={'OBJECT'})
+        
+        quaternion_cleanup(hips_baker)
+
+        # Select armature
+        target_armature.select_set(True)
+        root_baker.select_set(False)
+        hips_baker.select_set(False)
+        bpy.context.view_layer.objects.active = target_armature
+
+        bpy.ops.object.mode_set(mode='POSE')
+        root_bone.bone.select = True
+        target_armature.data.bones.active = root_bone.bone
+        bpy.ops.pose.constraint_add(type='COPY_LOCATION')
+        root_bone.constraints["Copy Location"].target = root_baker
+        bpy.ops.pose.constraint_add(type='COPY_ROTATION')
+        root_bone.constraints["Copy Rotation"].target = root_baker
+        root_bone.constraints["Copy Rotation"].use_offset = True
+
+        bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
+                clear_constraints=True, clear_parents=False, use_current_action=True, bake_types={'POSE'})
+
+        root_bone.bone.select = False
+        hip_bone.bone.select = True
+        target_armature.data.bones.active = hip_bone.bone
+
+        bpy.ops.pose.constraint_add(type='COPY_LOCATION')
+        hip_bone.constraints["Copy Location"].target = hips_baker
+        bpy.ops.pose.constraint_add(type='COPY_ROTATION')
+        hip_bone.constraints["Copy Rotation"].target = hips_baker
+
+        bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
+                clear_constraints=True, clear_parents=False, use_current_action=True, bake_types={'POSE'})
+
+        # Delete helpers
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.select_all(action='DESELECT')
+
+        hips_baker.select_set(True)
+        root_baker.select_set(True)
+
+        bpy.data.actions.remove(hips_baker.animation_data.action)
+        bpy.data.actions.remove(root_baker.animation_data.action)
+
+        bpy.ops.object.delete(use_global=False)
+
+        action['has_root_motion'] = True

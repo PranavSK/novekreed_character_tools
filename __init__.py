@@ -28,8 +28,6 @@ from .operators.rootmotion_controller import (
 from .operators.character_controller import (
     NCT_OT_init_character,
     NCT_OT_join_animations,
-    NCT_OT_prepare_mixamo_rig,
-    NCT_OT_rename_rig_bones,
     NCT_OT_armature_join_mesh
 )
 from .panels.main_panel import (
@@ -143,7 +141,7 @@ class NCT_AddonProperties(PropertyGroup):
         name="Root Bone Name",
         description="Choose name you want for the RootMotion Bone",
         maxlen=1024,
-        default="RootMotion"
+        default="Root"
     )
     is_rootmotion_all: BoolProperty(
         name="Apply Rootmotion To All",
@@ -176,15 +174,13 @@ class NCT_AddonProperties(PropertyGroup):
         description="Keep the Z axis +ve for rootmotion bake.",
         default=True
     )
-    rootmotion_use_rotation: BoolVectorProperty(
+    rootmotion_use_rotation: BoolProperty(
         name="Bake Rotation",
         description=(
-            "Process the rotation about selected axes" +
+            "Process the rotation about Z axes" +
             " for rootmotion bake."
         ),
-        subtype='XYZ',
-        size=3,
-        default=(False, False, True)
+        default=True
     )
     rootmotion_use_rest_pose: BoolProperty(
         name="Use Rest Pose",
@@ -205,8 +201,6 @@ classes = (
     # Character Controller
     NCT_OT_init_character,
     NCT_OT_join_animations,
-    NCT_OT_rename_rig_bones,
-    NCT_OT_prepare_mixamo_rig,
     NCT_OT_armature_join_mesh,
     # Animation Controller
     NCT_OT_animation_play,

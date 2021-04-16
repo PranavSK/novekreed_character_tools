@@ -48,41 +48,42 @@ class NCT_PT_main_panel(Panel, ObjectButtonsPanel):
             box.operator("nct.animation_play", icon='PLAY')
             box.operator("nct.animation_stop", icon='PAUSE')
             box.operator("nct.animation_delete", icon='TRASH')
-        layout.separator()
 
-        # Rootmotion
-        box = layout.box()
-        box.label(text="Root Motion Bake", icon='ACTION_TWEAK')
-        box.prop(tool, "rootmotion_start_frame")
-        box.prop(tool, "rootmotion_use_translation", toggle=True)
-        if tool.rootmotion_use_translation[2]:
-            box.prop(tool, "rootmotion_on_ground", toggle=True)
-        box.prop(tool, "rootmotion_use_rotation", toggle=True)
-        box.prop(tool, "rootmotion_use_rest_pose")
+            layout.separator()
 
-        box.separator()
-        box.column(align=True).prop(tool, "rootmotion_name", text="")
-        box.column(align=True).prop_search(
-            tool,
-            "rootmotion_hip_bone",
-            character_armature.data,
-            "bones",
-            text=""
-        )
+            # Rootmotion
+            box = layout.box()
+            box.label(text="Root Motion Bake", icon='ACTION_TWEAK')
+            box.prop(tool, "rootmotion_start_frame")
+            box.prop(tool, "rootmotion_use_translation", toggle=True)
+            if tool.rootmotion_use_translation[2]:
+                box.prop(tool, "rootmotion_on_ground", toggle=True)
+            box.prop(tool, "rootmotion_use_rotation", toggle=True)
 
-        box.prop(tool, "is_armature_visible")
-        box.prop(tool, "is_rootmotion_all")
-        box.separator()
-        if tool.rootmotion_hip_bone:
-            box.operator("nct.add_rootmotion", icon='BONE_DATA')
+            box.separator()
+            box.column(align=True).prop(tool, "rootmotion_name", text="")
+            box.column(align=True).prop_search(
+                tool,
+                "rootmotion_hip_bone",
+                character_armature.data,
+                "bones",
+                text=""
+            )
+
+            box.prop(tool, "is_armature_visible")
+            box.prop(tool, "is_rootmotion_all")
+            box.separator()
+            if tool.rootmotion_hip_bone:
+                box.operator("nct.add_rootmotion", icon='BONE_DATA')
+
         layout.separator()
 
         # Quick Export
         box = layout.box()
         box.label(text="Quick Export Utils", icon='MESH_MONKEY')
-        box.prop(tool, "character_export_character_name", text="")
-        box.prop(tool, "character_export_path", text="")
-        box.prop(tool, "character_export_format", text="")
+        box.prop(tool, "character_export_character_name")
+        box.prop(tool, "character_export_path")
+        box.prop(tool, "character_export_format")
         if tool.character_export_path:
             box.operator("nct.character_export", icon='EXPORT')
 

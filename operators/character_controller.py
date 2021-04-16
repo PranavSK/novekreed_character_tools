@@ -1,5 +1,6 @@
 import bpy
 import os
+import re
 
 from bpy.props import (StringProperty, CollectionProperty)
 from bpy.types import Operator
@@ -14,15 +15,119 @@ from ..utils import (
 
 
 def xform_mixamo_action(action, hip_bone_name, scale_to_apply):
-    req_data_path = 'pose.bones[\"{}\"].location'.format(hip_bone_name)
+    data_path = 'pose.bones[\"{}\"].location'.format(hip_bone_name)
 
     if len(action.groups) > 0:
         action.groups[0].name = MIXAMO_GROUP_NAME
 
-    for fcurve in action.fcurves:
-        if fcurve.data_path == req_data_path:
-            for keyframe in fcurve.keyframe_points:
-                keyframe.co[1] *= scale_to_apply[fcurve.array_index]
+    for axis in range(3):
+        fcurve = action.fcurves.find(data_path, index=axis)
+        for ind in range(len(fcurve.keyframe_points)):
+            fcurve.keyframe_points[ind].co[1] *= scale_to_apply[fcurve.array_index]
+
+
+def prepare_mixamo_rig(context, armature):
+    # Apply transformations on selected Armature
+    armature['nct_applied_rig_scale'] = armature.scale
+    context.view_layer.objects.active = armature
+    current_mode = context.object.mode
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.transform_apply(
+        location=True,
+        rotation=True,
+        scale=True
+    )
+    bpy.ops.object.mode_set(mode=current_mode)
+
+
+def rename_bones(armature, remove_namespace_only=False):
+    """function for renaming the armature bones to a target skeleton"""
+    for bone in armature.pose.bones:
+        old_name = bone.name
+        new_name = remove_namespace(bone.name)
+        if not remove_namespace_only:
+            new_name = get_mapped_bone_name(new_name)
+        
+        bone.name = new_name
+        
+        for mesh in armature.children:
+            for vertex_group in mesh.vertex_groups:
+                if vertex_group.name == old_name:
+                    vertex_group.name = new_name
+
+
+def remove_namespace(full_name):
+    i = re.search(r"[:_]", full_name[::-1])
+    if i:
+        return full_name[-(i.start())::]
+    else:
+        return full_name
+
+
+def get_mapped_bone_name(in_name):
+    schema = {
+        'unreal': {
+            'root': 'Root',
+            'Hips': 'Pelvis',
+            'Spine': 'spine_01',
+            'Spine1': 'spine_02',
+            'Spine2': 'spine_03',
+            'LeftShoulder': 'clavicle_l',
+            'LeftArm': 'upperarm_l',
+            'LeftForeArm': 'lowerarm_l',
+            'LeftHand': 'hand_l',
+            'RightShoulder': 'clavicle_r',
+            'RightArm': 'upperarm_r',
+            'RightForeArm': 'lowerarm_r',
+            'RightHand': 'hand_r',
+            'Neck1': 'neck_01',
+            'Neck': 'neck_01',
+            'Head': 'head',
+            'LeftUpLeg': 'thigh_l',
+            'LeftLeg': 'calf_l',
+            'LeftFoot': 'foot_l',
+            'RightUpLeg': 'thigh_r',
+            'RightLeg': 'calf_r',
+            'RightFoot': 'foot_r',
+            'LeftHandIndex1': 'index_01_l',
+            'LeftHandIndex2': 'index_02_l',
+            'LeftHandIndex3': 'index_03_l',
+            'LeftHandMiddle1': 'middle_01_l',
+            'LeftHandMiddle2': 'middle_02_l',
+            'LeftHandMiddle3': 'middle_03_l',
+            'LeftHandPinky1': 'pinky_01_l',
+            'LeftHandPinky2': 'pinky_02_l',
+            'LeftHandPinky3': 'pinky_03_l',
+            'LeftHandRing1': 'ring_01_l',
+            'LeftHandRing2': 'ring_02_l',
+            'LeftHandRing3': 'ring_03_l',
+            'LeftHandThumb1': 'thumb_01_l',
+            'LeftHandThumb2': 'thumb_02_l',
+            'LeftHandThumb3': 'thumb_03_l',
+            'RightHandIndex1': 'index_01_r',
+            'RightHandIndex2': 'index_02_r',
+            'RightHandIndex3': 'index_03_r',
+            'RightHandMiddle1': 'middle_01_r',
+            'RightHandMiddle2': 'middle_02_r',
+            'RightHandMiddle3': 'middle_03_r',
+            'RightHandPinky1': 'pinky_01_r',
+            'RightHandPinky2': 'pinky_02_r',
+            'RightHandPinky3': 'pinky_03_r',
+            'RightHandRing1': 'ring_01_r',
+            'RightHandRing2': 'ring_02_r',
+            'RightHandRing3': 'ring_03_r',
+            'RightHandThumb1': 'thumb_01_r',
+            'RightHandThumb2': 'thumb_02_r',
+            'RightHandThumb3': 'thumb_03_r',
+            'LeftToeBase': 'ball_l',
+            'RightToeBase': 'ball_r'
+        }
+    }
+    new_name = schema['unreal'].get(in_name)
+    if new_name:
+        return new_name
+    else:
+        return in_name
 
 
 class NCT_OT_init_character(Operator, ImportHelper):
@@ -49,8 +154,21 @@ class NCT_OT_init_character(Operator, ImportHelper):
         self.report({'INFO'}, "Loading Character T-Pose")
         bpy.ops.import_scene.fbx(
             filepath=self.filepath,
+            axis_forward='-Z',
+            axis_up='Y',
+            bake_space_transform=False,
+            use_custom_normals=True,
+            use_image_search=True,
+            use_alpha_decals=False, decal_offset=0.0,
+            use_anim=True, anim_offset=1.0,
+            use_custom_props=True,
+            use_custom_props_enum_as_string=True,
+            force_connect_children=False,
             ignore_leaf_bones=True,
-            automatic_bone_orientation=True
+            automatic_bone_orientation=True,
+            primary_bone_axis='Y',
+            secondary_bone_axis='X',
+            use_prepost_rot=True
         )
 
         imported_objs = context.selected_objects
@@ -65,12 +183,18 @@ class NCT_OT_init_character(Operator, ImportHelper):
             )
             bpy.ops.object.delete({'selected_objects': imported_objs})
             return {'CANCELLED'}
+        
+        target_armature.name = "Skeleton"
+        target_armature.rotation_mode = 'QUATERNION'
+        # prepare_mixamo_rig(context, target_armature)
+        rename_bones(target_armature)
 
-        bone_names = []
-        for bone in target_armature.data.bones:
-            bone_names.append(bone.name.replace("mixamorig:", ""))
-        tool.rootmotion_hip_bone = "Hips" if "Hips" in bone_names else ""
-        target_armature.name = "Armature"
+        hipname = ""
+        for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "Pelvis", hipname):
+            hips = target_armature.pose.bones.get(hipname)
+            if hips != None:
+                break
+        tool.rootmotion_hip_bone = hipname
 
         tool.target_object = target_armature
         tpose_action = target_armature.animation_data.action
@@ -79,12 +203,12 @@ class NCT_OT_init_character(Operator, ImportHelper):
         push_to_nla_stash(armature=target_armature, action=tpose_action)
 
         # xform the action keyframes to avoid issues when rig has its transform
-        # applied in 'bpy.ops.nct.prepare_mixamo_rig'
-        xform_mixamo_action(
-            action=tpose_action,
-            hip_bone_name=tool.rootmotion_hip_bone,
-            scale_to_apply=target_armature.scale
-        )
+        # applied in prepare_mixamo_rig
+        # xform_mixamo_action(
+        #     action=tpose_action,
+        #     hip_bone_name=tool.rootmotion_hip_bone,
+        #     scale_to_apply=target_armature.scale
+        # )
 
         # Update list index
         tool.selected_action_index = bpy.data.actions.find(TPOSE_ACTION_NAME)
@@ -93,65 +217,7 @@ class NCT_OT_init_character(Operator, ImportHelper):
         if len(tpose_action.frame_range) > 0:
             context.scene.frame_end = tpose_action.frame_range[1]
 
-        bpy.ops.nct.prepare_mixamo_rig('EXEC_DEFAULT')
         self.report({'INFO'}, "Character Initialized.")
-        return {'FINISHED'}
-
-
-class NCT_OT_prepare_mixamo_rig(Operator):
-    bl_idname = "nct.prepare_mixamo_rig"
-    bl_label = "Prepare Mixamo Rig"
-    bl_description = "Fix mixamo rig to export"
-
-    def execute(self, context):
-        scene = context.scene
-        if not validate_target_armature(scene):
-            self.report({'ERROR'}, 'No valid target armature stored.')
-            return {'CANCELLED'}
-
-        tool = scene.novkreed_character_tools
-        target_armature = tool.target_object
-        # Apply transformations on selected Armature
-        target_armature['nct_applied_rig_scale'] = target_armature.scale
-        context.view_layer.objects.active = target_armature
-        current_mode = context.object.mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.transform_apply(
-            location=True,
-            rotation=True,
-            scale=True
-        )
-        bpy.ops.object.mode_set(mode=current_mode)
-
-        bpy.ops.nct.rename_rig_bones('EXEC_DEFAULT')
-        self.report({'INFO'}, "Rig Armature Prepared")
-        return {'FINISHED'}
-
-
-class NCT_OT_rename_rig_bones(Operator):
-    bl_idname = "nct.rename_rig_bones"
-    bl_label = "Rename Rig Bones"
-    bl_description = "Rename rig bones"
-
-    def execute(self, context):
-        scene = context.scene
-        tool = scene.novkreed_character_tools
-        if not validate_target_armature(context.scene):
-            self.report({'ERROR'}, 'No valid target armature stored.')
-            return {'CANCELLED'}
-
-        target_armature = tool.target_object
-        for mesh in target_armature.children:
-            for vertex_group in mesh.vertex_groups:
-                # If no ':' probably its already renamed
-                if ':' in vertex_group.name:
-                    vertex_group.name = vertex_group.name.split(":")[1]
-
-        for bone in target_armature.pose.bones:
-            if ':' in bone.name:
-                bone.name = bone.name.split(":")[1]
-
-        self.report({'INFO'}, "Character Bones Successfully Renamed")
         return {'FINISHED'}
 
 
@@ -211,22 +277,16 @@ class NCT_OT_join_animations(Operator, ImportHelper):
                     bpy.ops.object.delete({'selected_objects': imported_objs})
                     continue
 
-                imported_armature.animation_data.action.name = action_name
-                # Rename the bones
-                for bone in imported_armature.pose.bones:
-                    if ':' in bone.name:
-                        bone.name = bone.name.split(":")[1]
-
                 remove_list.extend(imported_objs)
 
+                rename_bones(imported_armature)
                 imported_action = imported_armature.animation_data.action
-
-                xform_mixamo_action(
-                    action=imported_action,
-                    hip_bone_name=tool.rootmotion_hip_bone,
-                    scale_to_apply=target_armature['nct_applied_rig_scale']
-                )
-
+                imported_action.name = action_name
+                # xform_mixamo_action(
+                #     action=imported_action,
+                #     hip_bone_name=tool.rootmotion_hip_bone,
+                #     scale_to_apply=target_armature['nct_applied_rig_scale']
+                # )
                 imported_action['is_nct_processed'] = True
 
                 push_to_nla_stash(

@@ -17,8 +17,6 @@ def validate_target_armature(scene) -> bool:
     else:
         if obj.name not in scene.objects:
             bpy.data.objects.remove(obj)
-            tool.target_object = None
-            tool.selected_action_index = None
             valid = False
 
     return valid
