@@ -117,11 +117,6 @@ class NCT_AddonProperties(PropertyGroup):
         description="The index of the active animation in list",
         update=on_update_selected_action_index
     )
-    trim_animation_name: StringProperty(
-        name="New Animation",
-        description="New animation name for the trimed action",
-        maxlen=1024
-    )
     trim_animation_from: IntProperty(
         name="From Frame",
         description="The desired start trim frame",

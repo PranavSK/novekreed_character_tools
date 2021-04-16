@@ -51,21 +51,23 @@ class NCT_OT_trim_animation(Operator):
 
     def trim_animation(self, target_armature, from_frame, to_frame):
         target_action = target_armature.animation_data.action
-        for group in target_action.groups:
-            if not group.select:
-                continue
-            for channel in group.channels:
-                if not channel.select:
-                    continue
-                keyframePoints = channel.keyframe_points
-                for i in range(0, len(keyframePoints)):
-                    frame = keyframePoints[i].co[0]
-                    if not (from_frame <= frame <= to_frame):
-                        target_armature.keyframe_delete(
-                            channel.data_path,
+        for fcurve in target_action.fcurves:
+            keyframePoints = fcurve.keyframe_points
+            for i in range(0, len(keyframePoints)):
+                frame = keyframePoints[i].co[0]
+                if not (from_frame <= frame <= to_frame):
+                    target_armature.keyframe_delete(
+                            fcurve.data_path,
                             frame=frame,
-                            index=channel.array_index
+                            index=fcurve.array_index
                         )
+            # Shift the remaining frames
+            offset = fcurve.keyframe_points[0].co[0]
+            for point in fcurve.keyframe_points:
+                point.co[0] = point.co[0] - offset
+                point.handle_left[0] = point.handle_left[0] - offset
+                point.handle_right[0] = point.handle_right[0] - offset                  
+
 
     def execute(self, context):
         scene = context.scene
@@ -75,17 +77,11 @@ class NCT_OT_trim_animation(Operator):
 
         tool = scene.novkreed_character_tools
         target_armature = tool.target_object
-        new_name = tool.trim_animation_name
-        if not new_name:
-            self.report(
-                {'ERROR'},
-                "Invalid name for new animation."
-            )
-            return {'CANCELLED'}
 
         from_frame = tool.trim_animation_from
         to_frame = tool.trim_animation_to
         select_action = target_armature.animation_data.action
+        new_name = select_action.name
         if not (
             0 <= tool.selected_action_index < len(bpy.data.actions) and
             select_action
@@ -122,7 +118,7 @@ class NCT_OT_trim_animation(Operator):
         target_armature.animation_data.action = action_copy
         action_copy['is_nct_processed'] = True
         push_to_nla_stash(armature=target_armature, action=action_copy)
-        tool.selected_action_index = bpy.data.actions.find(new_name)
+        tool.selected_action_index = bpy.data.actions.find(action_copy.name)
         # Trim Animation Frames Choosen By User
         self.trim_animation(target_armature, from_frame, to_frame)
 

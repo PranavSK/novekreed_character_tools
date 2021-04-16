@@ -51,6 +51,15 @@ class NCT_PT_main_panel(Panel, ObjectButtonsPanel):
 
             layout.separator()
 
+            # Trim animation
+            box = layout.box()
+            box.label(text="Trim Animation", icon='DOCUMENTS')
+            box.prop(tool, "trim_animation_from")
+            box.prop(tool, "trim_animation_to")
+            box.operator("nct.trim_animation", icon="SELECT_SET")
+
+            layout.separator()
+
             # Rootmotion
             box = layout.box()
             box.label(text="Root Motion Bake", icon='ACTION_TWEAK')
@@ -101,40 +110,9 @@ class ACTION_UL_character_actions(UIList):
         index
     ):
         if item.get('is_nct_processed'):
-            layout.prop(item, "name", text="", emboss=False, icon='ANIM_DATA')
+            if item.get('has_root_motion'):
+                layout.prop(item, "name", text="Root", emboss=False, icon='ANIM_DATA')
+            else:
+                layout.prop(item, "name", text="", emboss=False, icon='ANIM_DATA')
         else:
-            layout.label(text="{} - Unprocessed".format(item.name))
-
-
-class NCT_PT_trim_animation_utils(bpy.types.Panel, ObjectButtonsPanel):
-    bl_idname = "OBJECT_PT_trim_animation_utils"
-    bl_label = "Trim Animations"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_context = "objectmode"
-    bl_parent_id = "OBJECT_PT_animations_panel"
-    bl_options = {"DEFAULT_CLOSED"}
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        if not validate_target_armature(context.scene):
-            layout.box().label(
-                text="No valid target armature available." +
-                "\nInitialize character first."
-            )
-            return
-
-        tool = scene.novkreed_character_tools
-        if 0 <= tool.selected_action_index < len(bpy.data.actions):
-            trimAnimationBox = layout.box()
-            trimAnimationBox.label(text="Trim Animations", icon='DOCUMENTS')
-            trimAnimationBox.prop(tool, "trim_animation_name")
-            trimAnimationRow = trimAnimationBox.row()
-            trimAnimationRow.prop(tool, "trim_animation_from")
-            trimAnimationRow.prop(tool, "trim_animation_to")
-            trimAnimationBox.operator("nct.trim_animation", icon='SELECT_SET')
-        else:
-            layout.box().label(
-                text="Select animation to trim."
-            )
+            layout.prop(item, "name", text="Unprocessed", emboss=False, icon='ANIM_DATA')
