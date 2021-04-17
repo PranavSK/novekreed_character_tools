@@ -27,6 +27,7 @@ from .operators.rootmotion_controller import (
 )
 from .operators.character_controller import (
     NCT_OT_init_character,
+    NCT_OT_load_character,
     NCT_OT_join_animations,
     NCT_OT_armature_join_mesh
 )
@@ -195,6 +196,7 @@ classes = (
     ACTION_UL_character_actions,
     # Character Controller
     NCT_OT_init_character,
+    NCT_OT_load_character,
     NCT_OT_join_animations,
     NCT_OT_armature_join_mesh,
     # Animation Controller

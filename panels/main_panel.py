@@ -25,6 +25,9 @@ class NCT_PT_main_panel(Panel, ObjectButtonsPanel):
             row = box.row()
             row.scale_y = 2.0
             row.operator("nct.init_character", icon='IMPORT')
+            row = box.row()
+            row.scale_y = 2.0
+            row.operator("nct.load_character", icon='IMPORT')
             return
         else:
             box.operator("nct.join_animations", icon='ASSET_MANAGER')

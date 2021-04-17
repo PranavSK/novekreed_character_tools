@@ -14,21 +14,22 @@ from ..utils import (
 )
 
 
-def xform_mixamo_action(action, hip_bone_name, scale_to_apply):
-    data_path = 'pose.bones[\"{}\"].location'.format(hip_bone_name)
+def xform_mixamo_action(action, bone_name, scale_to_apply):
+    data_path = 'pose.bones[\"{}\"].location'.format(bone_name)
 
     if len(action.groups) > 0:
         action.groups[0].name = MIXAMO_GROUP_NAME
 
     for axis in range(3):
         fcurve = action.fcurves.find(data_path, index=axis)
+        if fcurve is None:
+            continue
         for ind in range(len(fcurve.keyframe_points)):
             fcurve.keyframe_points[ind].co[1] *= scale_to_apply[fcurve.array_index]
 
 
 def prepare_mixamo_rig(context, armature):
     # Apply transformations on selected Armature
-    armature['nct_applied_rig_scale'] = armature.scale
     context.view_layer.objects.active = armature
     current_mode = context.object.mode
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -37,6 +38,26 @@ def prepare_mixamo_rig(context, armature):
         rotation=True,
         scale=True
     )
+
+    # Find the root bones in bone hierarchy
+    root_bones = set()
+    for bone in armature.data.bones:
+        if bone.parent == None:
+            root_bones.add(bone)
+    
+    actions = set()
+    actions.add(armature.animation_data.action)
+    for track in armature.animation_data.nla_tracks:
+        for strip in track.strips:
+            actions.add(strip.action)
+    
+    for bone in root_bones:
+        for action in actions:
+            xform_mixamo_action(
+                action=action,
+                bone_name=bone.name,
+                scale_to_apply=armature.scale
+            )
     bpy.ops.object.mode_set(mode=current_mode)
 
 
@@ -130,11 +151,85 @@ def get_mapped_bone_name(in_name):
         return in_name
 
 
-class NCT_OT_init_character(Operator, ImportHelper):
+class NCT_OT_init_character(Operator):
     bl_idname = "nct.init_character"
     bl_label = "Initialize Character"
     bl_description = (
         "Used to init 'Main' Armature." +
+        " The character should have 'T-Pose' animation from Mixamo."
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target_name: StringProperty(name="target_armature")
+
+    def execute(self, context):
+        scene = context.scene
+        tool = scene.novkreed_character_tools
+        if self.target_name:
+            target_armature = bpy.data.objects[self.target_name]
+        else:
+            target_armature = context.view_layer.objects.active
+
+        if not target_armature or target_armature.type != 'ARMATURE':
+            self.report(
+                {'ERROR'}, 
+                "The object is not a valid armature."
+            )
+            return {'CANCELLED'}
+
+        if validate_target_armature(scene):
+            self.report(
+                {'ERROR'},
+                "A character armature exists. Only one can worked per scene."
+            )
+            return {'CANCELLED'}
+        
+        target_armature.name = "Armature"
+        target_armature.rotation_mode = 'QUATERNION'
+        prepare_mixamo_rig(context, target_armature)
+        rename_bones(target_armature)
+
+        hipname = ""
+        for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "Pelvis", hipname):
+            hips = target_armature.pose.bones.get(hipname)
+            if hips != None:
+                break
+        tool.rootmotion_hip_bone = hipname
+
+        tool.target_object = target_armature
+        tpose_action = target_armature.animation_data.action
+        tpose_action.name = TPOSE_ACTION_NAME
+
+        # Reset the tpose to 0.
+        for bone in target_armature.data.bones:
+            data_path = 'pose.bones[\"{}\"].location'.format(bone.name)
+            for axis in range(3):
+                fcurve = tpose_action.fcurves.find(data_path=data_path, index=axis)
+                if fcurve == None:
+                    continue
+                for ind in range(len(fcurve.keyframe_points)):
+                    # Set the pose position of the bone to 0
+                    fcurve.keyframe_points[ind].co[1] = 0.0
+        
+        tpose_action['is_nct_processed'] = True
+        push_to_nla_stash(armature=target_armature, action=tpose_action)
+
+        # Update list index
+        tool.selected_action_index = bpy.data.actions.find(TPOSE_ACTION_NAME)
+        target_armature.animation_data.action = tpose_action
+
+        if len(tpose_action.frame_range) > 0:
+            context.scene.frame_end = tpose_action.frame_range[1]
+
+        self.report({'INFO'}, "Character Initialized.")
+        return {'FINISHED'}
+
+
+class NCT_OT_load_character(Operator, ImportHelper):
+    bl_idname = "nct.load_character"
+    bl_label = "Load Character"
+    bl_description = (
+        "Used to load and init 'Main' Armature." +
         " Loaded character should have 'T-Pose' animation from Mixamo."
     )
     bl_options = {'REGISTER', 'UNDO'}
@@ -184,42 +279,9 @@ class NCT_OT_init_character(Operator, ImportHelper):
             bpy.ops.object.delete({'selected_objects': imported_objs})
             return {'CANCELLED'}
         
-        target_armature.name = "Skeleton"
-        target_armature.rotation_mode = 'QUATERNION'
-        # prepare_mixamo_rig(context, target_armature)
-        rename_bones(target_armature)
-
-        hipname = ""
-        for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "Pelvis", hipname):
-            hips = target_armature.pose.bones.get(hipname)
-            if hips != None:
-                break
-        tool.rootmotion_hip_bone = hipname
-
-        tool.target_object = target_armature
-        tpose_action = target_armature.animation_data.action
-        tpose_action.name = TPOSE_ACTION_NAME
-        tpose_action['is_nct_processed'] = True
-        push_to_nla_stash(armature=target_armature, action=tpose_action)
-
-        # xform the action keyframes to avoid issues when rig has its transform
-        # applied in prepare_mixamo_rig
-        # xform_mixamo_action(
-        #     action=tpose_action,
-        #     hip_bone_name=tool.rootmotion_hip_bone,
-        #     scale_to_apply=target_armature.scale
-        # )
-
-        # Update list index
-        tool.selected_action_index = bpy.data.actions.find(TPOSE_ACTION_NAME)
-        target_armature.animation_data.action = tpose_action
-
-        if len(tpose_action.frame_range) > 0:
-            context.scene.frame_end = tpose_action.frame_range[1]
-
-        self.report({'INFO'}, "Character Initialized.")
+        bpy.ops.nct.init_character(target_name=target_armature.name)
         return {'FINISHED'}
-
+        
 
 class NCT_OT_join_animations(Operator, ImportHelper):
     bl_idname = "nct.join_animations"
@@ -279,14 +341,10 @@ class NCT_OT_join_animations(Operator, ImportHelper):
 
                 remove_list.extend(imported_objs)
 
+                prepare_mixamo_rig(context, imported_armature)
                 rename_bones(imported_armature)
                 imported_action = imported_armature.animation_data.action
                 imported_action.name = action_name
-                # xform_mixamo_action(
-                #     action=imported_action,
-                #     hip_bone_name=tool.rootmotion_hip_bone,
-                #     scale_to_apply=target_armature['nct_applied_rig_scale']
-                # )
                 imported_action['is_nct_processed'] = True
 
                 push_to_nla_stash(
