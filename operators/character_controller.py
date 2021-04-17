@@ -51,14 +51,20 @@ def prepare_mixamo_rig(context, armature):
         for strip in track.strips:
             actions.add(strip.action)
     
-    for bone in root_bones:
-        for action in actions:
-            xform_mixamo_action(
-                action=action,
-                bone_name=bone.name,
-                scale_to_apply=armature.scale
-            )
+    hipname = ""
+    for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis", hipname):
+        hips = armature.pose.bones.get(hipname)
+        if hips != None:
+            break
+    
+    for action in actions:
+        xform_mixamo_action(
+            action=action,
+            bone_name=hipname,
+            scale_to_apply=armature.scale
+        )
     bpy.ops.object.mode_set(mode=current_mode)
+    rename_bones(armature)
 
 
 def rename_bones(armature, remove_namespace_only=False):
@@ -89,7 +95,7 @@ def get_mapped_bone_name(in_name):
     schema = {
         'unreal': {
             'root': 'Root',
-            'Hips': 'Pelvis',
+            'Hips': 'pelvis',
             'Spine': 'spine_01',
             'Spine1': 'spine_02',
             'Spine2': 'spine_03',
@@ -187,10 +193,9 @@ class NCT_OT_init_character(Operator):
         target_armature.name = "Armature"
         target_armature.rotation_mode = 'QUATERNION'
         prepare_mixamo_rig(context, target_armature)
-        rename_bones(target_armature)
 
         hipname = ""
-        for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "Pelvis", hipname):
+        for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis", hipname):
             hips = target_armature.pose.bones.get(hipname)
             if hips != None:
                 break
@@ -342,7 +347,6 @@ class NCT_OT_join_animations(Operator, ImportHelper):
                 remove_list.extend(imported_objs)
 
                 prepare_mixamo_rig(context, imported_armature)
-                rename_bones(imported_armature)
                 imported_action = imported_armature.animation_data.action
                 imported_action.name = action_name
                 imported_action['is_nct_processed'] = True

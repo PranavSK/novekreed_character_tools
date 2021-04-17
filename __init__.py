@@ -39,8 +39,8 @@ from .panels.main_panel import (
 
 bl_info = {
     "name": "Novkreed Character Tools",
-    "version": (0, 0, 3),
-    "blender": (2, 91, 0),
+    "version": (0, 0, 4),
+    "blender": (2, 92, 0),
     "location": "3D View > Tools",
     "warning": "",
     "category": "Character"
