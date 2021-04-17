@@ -9,62 +9,93 @@ from bpy_extras.io_utils import ImportHelper
 from ..utils import (
     push_to_nla_stash,
     validate_target_armature,
-    TPOSE_ACTION_NAME,
-    MIXAMO_GROUP_NAME
+    TPOSE_ACTION_NAME
 )
 
 
-def xform_mixamo_action(action, bone_name, scale_to_apply):
-    data_path = 'pose.bones[\"{}\"].location'.format(bone_name)
-
-    if len(action.groups) > 0:
-        action.groups[0].name = MIXAMO_GROUP_NAME
-
-    for axis in range(3):
-        fcurve = action.fcurves.find(data_path, index=axis)
-        if fcurve is None:
-            continue
-        for ind in range(len(fcurve.keyframe_points)):
-            fcurve.keyframe_points[ind].co[1] *= scale_to_apply[fcurve.array_index]
-
-
-def prepare_mixamo_rig(context, armature):
-    # Apply transformations on selected Armature
-    context.view_layer.objects.active = armature
+def prepare_mixamo_rig(context, armature, is_tpose=False):
+    rename_bones(armature)
     current_mode = context.object.mode
     bpy.ops.object.mode_set(mode='OBJECT')
+    if is_tpose:
+        armature.select_set(True)
+        context.view_layer.objects.active = armature
+        bpy.ops.object.transform_apply(
+            location=True,
+            rotation=True,
+            scale=True
+        )
+
+        # Reset the tpose to 0.
+        for bone in armature.data.bones:
+            data_path = (
+                'pose.bones[\"{}\"].location'.format(bone.name)
+            )
+            for axis in range(3):
+                fcurve = armature.animation_data.action.fcurves\
+                    .find(data_path=data_path, index=axis)
+                if fcurve == None:
+                    continue
+                for ind in range(len(fcurve.keyframe_points)):
+                    # Set the pose position of the bone to 0
+                    fcurve.keyframe_points[ind].co[1] = 0.0
+
+        bpy.ops.object.mode_set(mode=current_mode)
+        return
+
+    start_frame = int(armature.animation_data.action.frame_range[0])
+    end_frame = int(armature.animation_data.action.frame_range[1])
+    
+    hipname = ""
+    for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis"):
+        hips = armature.pose.bones.get(hipname)
+        if hips != None:
+            break
+    
+    hip_bone = armature.pose.bones[hipname]
+
+    # Create helper to bake the motion
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.empty_add(type='ARROWS', radius=1, align='WORLD', location=(0, 0, 0))
+    scale_baker = bpy.context.object
+    scale_baker.name = "scale_baker"
+    scale_baker.rotation_mode = 'QUATERNION'
+    bpy.ops.object.constraint_add(type='COPY_LOCATION')
+    scale_baker.constraints["Copy Location"].target = armature
+    scale_baker.constraints["Copy Location"].subtarget = hipname
+
+    bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
+        clear_constraints=True, clear_parents=False, use_current_action=False, bake_types={'OBJECT'})
+    
+    # Apply transformations on selected Armature
+    bpy.ops.object.select_all(action='DESELECT')
+    armature.select_set(True)
+    context.view_layer.objects.active = armature
     bpy.ops.object.transform_apply(
         location=True,
         rotation=True,
         scale=True
     )
 
-    # Find the root bones in bone hierarchy
-    root_bones = set()
-    for bone in armature.data.bones:
-        if bone.parent == None:
-            root_bones.add(bone)
+    bpy.ops.object.mode_set(mode='POSE')
+    hip_bone.bone.select = True
+    armature.data.bones.active = hip_bone.bone
+    bpy.ops.pose.constraint_add(type='COPY_LOCATION')
+    hip_bone.constraints["Copy Location"].target = scale_baker
+
+    bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
+        clear_constraints=True, clear_parents=False, use_current_action=True, bake_types={'POSE'})
     
-    actions = set()
-    actions.add(armature.animation_data.action)
-    for track in armature.animation_data.nla_tracks:
-        for strip in track.strips:
-            actions.add(strip.action)
+    # Delete helpers
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+
+    scale_baker.select_set(True)
+
+    bpy.data.actions.remove(scale_baker.animation_data.action)
+    bpy.ops.object.delete(use_global=False)
     
-    hipname = ""
-    for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis", hipname):
-        hips = armature.pose.bones.get(hipname)
-        if hips != None:
-            break
-    
-    for action in actions:
-        xform_mixamo_action(
-            action=action,
-            bone_name=hipname,
-            scale_to_apply=armature.scale
-        )
     bpy.ops.object.mode_set(mode=current_mode)
-    rename_bones(armature)
 
 
 def rename_bones(armature, remove_namespace_only=False):
@@ -192,7 +223,7 @@ class NCT_OT_init_character(Operator):
         
         target_armature.name = "Armature"
         target_armature.rotation_mode = 'QUATERNION'
-        prepare_mixamo_rig(context, target_armature)
+        prepare_mixamo_rig(context, target_armature, True)
 
         hipname = ""
         for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis", hipname):
@@ -203,19 +234,7 @@ class NCT_OT_init_character(Operator):
 
         tool.target_object = target_armature
         tpose_action = target_armature.animation_data.action
-        tpose_action.name = TPOSE_ACTION_NAME
-
-        # Reset the tpose to 0.
-        for bone in target_armature.data.bones:
-            data_path = 'pose.bones[\"{}\"].location'.format(bone.name)
-            for axis in range(3):
-                fcurve = tpose_action.fcurves.find(data_path=data_path, index=axis)
-                if fcurve == None:
-                    continue
-                for ind in range(len(fcurve.keyframe_points)):
-                    # Set the pose position of the bone to 0
-                    fcurve.keyframe_points[ind].co[1] = 0.0
-        
+        tpose_action.name = TPOSE_ACTION_NAME        
         tpose_action['is_nct_processed'] = True
         push_to_nla_stash(armature=target_armature, action=tpose_action)
 
