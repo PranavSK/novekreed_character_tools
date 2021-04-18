@@ -87,7 +87,7 @@ class NCT_OT_add_rootbone(Operator):
             # Bone Setup
             rootmotion_bone = editbones.new(rootmotion_root_name)
             rootmotion_bone.head = (0.0, 0.0, 0.0)
-            rootmotion_bone.tail = (0.0, 0.0, 10.0)
+            rootmotion_bone.tail = (0.0, 0.0, 0.2)
 
             editbones[hips_name].parent = rootmotion_bone
 
