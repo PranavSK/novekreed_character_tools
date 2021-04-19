@@ -3,7 +3,7 @@ import bpy
 from bl_ui.properties_object import ObjectButtonsPanel
 from bpy.types import (UIList, Panel)
 
-from ..utils import validate_target_armature
+from ..utils.armature import validate_target_armature
 
 
 class NCT_PT_main_panel(Panel, ObjectButtonsPanel):
@@ -82,7 +82,6 @@ class NCT_PT_main_panel(Panel, ObjectButtonsPanel):
                 text=""
             )
 
-            box.prop(tool, "is_armature_visible")
             box.prop(tool, "is_rootmotion_all")
             box.separator()
             if tool.rootmotion_hip_bone:

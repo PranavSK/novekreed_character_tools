@@ -1,11 +1,8 @@
 import bpy
 
 from bpy.types import Operator
-from ..utils import (
-    push_to_nla_stash,
-    validate_target_armature,
-    TPOSE_ACTION_NAME
-)
+from ..utils.armature import validate_target_armature
+from ..utils.actions import TPOSE_ACTION_NAME, push_to_nla_stash, trim_animation
 
 
 class NCT_OT_animation_play(Operator):
@@ -49,26 +46,6 @@ class NCT_OT_trim_animation(Operator):
     bl_label = "Trim Animation"
     bl_description = "Trim Selected Animation Into A New One"
 
-    def trim_animation(self, target_armature, from_frame, to_frame):
-        target_action = target_armature.animation_data.action
-        for fcurve in target_action.fcurves:
-            keyframePoints = fcurve.keyframe_points
-            for i in range(0, len(keyframePoints)):
-                frame = keyframePoints[i].co[0]
-                if not (from_frame <= frame <= to_frame):
-                    target_armature.keyframe_delete(
-                            fcurve.data_path,
-                            frame=frame,
-                            index=fcurve.array_index
-                        )
-            # Shift the remaining frames
-            offset = fcurve.keyframe_points[0].co[0]
-            for point in fcurve.keyframe_points:
-                point.co[0] = point.co[0] - offset
-                point.handle_left[0] = point.handle_left[0] - offset
-                point.handle_right[0] = point.handle_right[0] - offset                  
-
-
     def execute(self, context):
         scene = context.scene
         if not validate_target_armature(scene):
@@ -82,33 +59,21 @@ class NCT_OT_trim_animation(Operator):
         to_frame = tool.trim_animation_to
         select_action = target_armature.animation_data.action
         new_name = select_action.name
-        if not (
-            0 <= tool.selected_action_index < len(bpy.data.actions) and
-            select_action
-        ):
-            self.report(
-                {'ERROR'},
-                "No selected action on armature."
-            )
+        if not select_action:
+            self.report({'ERROR'}, "No selected action on armature.")
             return {'CANCELLED'}
 
-        if select_action != bpy.data.actions[tool.selected_action_index]:
-            self.report(
-                {'INFO'},
-                "Active action on armature is not selected action in tool." +
-                "Continuing but result may be undesirable."
-            )
-            target_armature.animation_data.action = \
-                bpy.data.actions[tool.selected_action_index]
+        # if select_action != bpy.data.actions[tool.selected_action_index]:
+        #     self.report(
+        #         {'INFO'},
+        #         "Active action on armature is not selected action in tool." +
+        #         "Continuing but result may be undesirable."
+        #     )
+        #     target_armature.animation_data.action = \
+        #         bpy.data.actions[tool.selected_action_index]
+        #     select_action = target_armature.animation_data.action
 
         anim_frames = int(select_action.frame_range[1])
-        if target_armature is None:
-            self.report(
-                {'ERROR'},
-                "Imported character is not valid. Not armature found"
-            )
-            return {'CANCELLED'}
-
         if not (from_frame < to_frame < anim_frames):
             self.report({'ERROR'}, 'Choose Valid Animation Frames')
             return {'CANCELLED'}
@@ -116,11 +81,11 @@ class NCT_OT_trim_animation(Operator):
         action_copy = target_armature.animation_data.action.copy()
         action_copy.name = new_name
         target_armature.animation_data.action = action_copy
+        trim_animation(target_armature, action_copy, from_frame, to_frame)
         action_copy['is_nct_processed'] = True
         push_to_nla_stash(armature=target_armature, action=action_copy)
         tool.selected_action_index = bpy.data.actions.find(action_copy.name)
         # Trim Animation Frames Choosen By User
-        self.trim_animation(target_armature, from_frame, to_frame)
 
         context.scene.frame_start = from_frame
         context.scene.frame_end = to_frame
@@ -144,35 +109,28 @@ class NCT_OT_animation_delete(Operator):
         tool = scene.novkreed_character_tools
         target_armature = tool.target_object
         select_action = target_armature.animation_data.action
-        if not (
-            0 <= tool.selected_action_index < len(bpy.data.actions) and
-            select_action
-        ):
-            self.report(
-                {'ERROR'},
-                "No selected action on armature."
-            )
+        if not select_action:
+            self.report({'ERROR'}, "No selected action on armature.")
             return {'CANCELLED'}
 
-        if select_action != bpy.data.actions[tool.selected_action_index]:
-            self.report(
-                {'INFO'},
-                "Active action on armature is not selected action in tool." +
-                "Action not deleted."
-            )
-            return {'CANCELLED'}
+        # if select_action != bpy.data.actions[tool.selected_action_index]:
+        #     self.report(
+        #         {'INFO'},
+        #         "Active action on armature is not selected action in tool." +
+        #         "Action not deleted."
+        #     )
+        #     return {'CANCELLED'}
 
         if select_action.name == TPOSE_ACTION_NAME:
             self.report(
-                {'INFO'},
-                "Deleting the T-Pose action can cause issues."
-            )
+                {'INFO'}, "Deleting the T-Pose action can cause issues.")
 
-        bpy.data.actions.remove(select_action)
         # Reset active action to TPose
         tool.selected_action_index = bpy.data.actions.find(TPOSE_ACTION_NAME)
         target_armature.animation_data.action = \
             bpy.data.actions[TPOSE_ACTION_NAME]
+
+        bpy.data.actions.remove(select_action)
 
         self.report({'INFO'}, 'Animation Deleted')
 

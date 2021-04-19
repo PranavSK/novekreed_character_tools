@@ -1,102 +1,16 @@
 import bpy
 import os
-import re
 
 from bpy.props import (StringProperty, CollectionProperty)
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
-
-from ..utils import (
-    push_to_nla_stash,
-    validate_target_armature,
-    rename_bones,
-    TPOSE_ACTION_NAME
+from ..utils.actions import TPOSE_ACTION_NAME, push_to_nla_stash
+from ..utils.armature import (
+    get_hip_bone_name,
+    prepare_anim_rig,
+    prepare_tpose_rig,
+    validate_target_armature
 )
-
-
-def prepare_mixamo_rig(context, armature, is_tpose=False):
-    rename_bones(armature)
-    current_mode = context.object.mode
-    bpy.ops.object.mode_set(mode='OBJECT')
-    if is_tpose:
-        armature.select_set(True)
-        context.view_layer.objects.active = armature
-        bpy.ops.object.transform_apply(
-            location=True,
-            rotation=True,
-            scale=True
-        )
-
-        # Reset the tpose to 0.
-        for bone in armature.data.bones:
-            data_path = (
-                'pose.bones[\"{}\"].location'.format(bone.name)
-            )
-            for axis in range(3):
-                fcurve = armature.animation_data.action.fcurves\
-                    .find(data_path=data_path, index=axis)
-                if fcurve == None:
-                    continue
-                for ind in range(len(fcurve.keyframe_points)):
-                    # Set the pose position of the bone to 0
-                    fcurve.keyframe_points[ind].co[1] = 0.0
-
-        bpy.ops.object.mode_set(mode=current_mode)
-        return
-
-    start_frame = int(armature.animation_data.action.frame_range[0])
-    end_frame = int(armature.animation_data.action.frame_range[1])
-    
-    hipname = ""
-    for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis"):
-        hips = armature.pose.bones.get(hipname)
-        if hips != None:
-            break
-    
-    hip_bone = armature.pose.bones[hipname]
-
-    # Create helper to bake the motion
-    bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.empty_add(type='ARROWS', radius=1, align='WORLD', location=(0, 0, 0))
-    scale_baker = bpy.context.object
-    scale_baker.name = "scale_baker"
-    scale_baker.rotation_mode = 'QUATERNION'
-    bpy.ops.object.constraint_add(type='COPY_LOCATION')
-    scale_baker.constraints["Copy Location"].target = armature
-    scale_baker.constraints["Copy Location"].subtarget = hipname
-
-    bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
-        clear_constraints=True, clear_parents=False, use_current_action=False, bake_types={'OBJECT'})
-    
-    # Apply transformations on selected Armature
-    bpy.ops.object.select_all(action='DESELECT')
-    armature.select_set(True)
-    context.view_layer.objects.active = armature
-    bpy.ops.object.transform_apply(
-        location=True,
-        rotation=True,
-        scale=True
-    )
-
-    bpy.ops.object.mode_set(mode='POSE')
-    hip_bone.bone.select = True
-    armature.data.bones.active = hip_bone.bone
-    bpy.ops.pose.constraint_add(type='COPY_LOCATION')
-    hip_bone.constraints["Copy Location"].target = scale_baker
-
-    bpy.ops.nla.bake(frame_start=start_frame, frame_end=end_frame, step=1, only_selected=True, visual_keying=True,
-        clear_constraints=True, clear_parents=False, use_current_action=True, bake_types={'POSE'})
-    
-    # Delete helpers
-    bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.select_all(action='DESELECT')
-
-    scale_baker.select_set(True)
-
-    bpy.data.actions.remove(scale_baker.animation_data.action)
-    bpy.ops.object.delete(use_global=False)
-    
-    bpy.ops.object.mode_set(mode=current_mode)
 
 
 class NCT_OT_init_character(Operator):
@@ -108,7 +22,7 @@ class NCT_OT_init_character(Operator):
     )
     bl_options = {'REGISTER', 'UNDO'}
 
-    target_name: StringProperty(name="target_armature")
+    target_name: StringProperty(name="target_name")
 
     def execute(self, context):
         scene = context.scene
@@ -120,7 +34,7 @@ class NCT_OT_init_character(Operator):
 
         if not target_armature or target_armature.type != 'ARMATURE':
             self.report(
-                {'ERROR'}, 
+                {'ERROR'},
                 "The object is not a valid armature."
             )
             return {'CANCELLED'}
@@ -131,21 +45,20 @@ class NCT_OT_init_character(Operator):
                 "A character armature exists. Only one can worked per scene."
             )
             return {'CANCELLED'}
-        
+
+        current_mode = context.object.mode
+
         target_armature.name = "Armature"
         target_armature.rotation_mode = 'QUATERNION'
-        prepare_mixamo_rig(context, target_armature, True)
+        prepare_tpose_rig(context, target_armature)
 
-        hipname = ""
-        for hipname in ("Hips", "mixamorig:Hips", "mixamorig_Hips", "pelvis", hipname):
-            hips = target_armature.pose.bones.get(hipname)
-            if hips != None:
-                break
-        tool.rootmotion_hip_bone = hipname
+        tool.rootmotion_hip_bone = get_hip_bone_name(target_armature)
 
         tool.target_object = target_armature
         tpose_action = target_armature.animation_data.action
-        tpose_action.name = TPOSE_ACTION_NAME        
+        tpose_action.name = TPOSE_ACTION_NAME
+        if len(tpose_action.groups) > 0:
+            tpose_action.groups[0].name = TPOSE_ACTION_NAME
         tpose_action['is_nct_processed'] = True
         push_to_nla_stash(armature=target_armature, action=tpose_action)
 
@@ -155,6 +68,8 @@ class NCT_OT_init_character(Operator):
 
         if len(tpose_action.frame_range) > 0:
             context.scene.frame_end = tpose_action.frame_range[1]
+
+        bpy.ops.object.mode_set(mode=current_mode)
 
         self.report({'INFO'}, "Character Initialized.")
         return {'FINISHED'}
@@ -213,10 +128,10 @@ class NCT_OT_load_character(Operator, ImportHelper):
             )
             bpy.ops.object.delete({'selected_objects': imported_objs})
             return {'CANCELLED'}
-        
+
         bpy.ops.nct.init_character(target_name=target_armature.name)
         return {'FINISHED'}
-        
+
 
 class NCT_OT_join_animations(Operator, ImportHelper):
     bl_idname = "nct.join_animations"
@@ -243,6 +158,8 @@ class NCT_OT_join_animations(Operator, ImportHelper):
             self.report({'ERROR'}, "No files provided.")
             return {'CANCELLED'}
 
+        current_mode = context.object.mode
+
         for file in self.files:
             filename = file.name
             file_basename = os.path.basename(filename)
@@ -254,37 +171,38 @@ class NCT_OT_join_animations(Operator, ImportHelper):
             if action_name == TPOSE_ACTION_NAME:
                 continue
 
-            if (hasattr(bpy.types, bpy.ops.import_scene.fbx.idname())):
-                bpy.ops.import_scene.fbx(
-                    filepath=os.path.join(self.directory, filename),
-                    ignore_leaf_bones=True,
-                    automatic_bone_orientation=True
+            bpy.ops.import_scene.fbx(
+                filepath=os.path.join(self.directory, filename),
+                ignore_leaf_bones=True,
+                automatic_bone_orientation=True
+            )
+            imported_objs = context.selected_objects
+            imported_armature = next(
+                (obj for obj in imported_objs if obj.type == 'ARMATURE'),
+                None
+            )
+            if imported_armature is None:
+                self.report(
+                    {'INFO'},
+                    "Imported animation is not valid. No armature found " +
+                    "in {}".format(filename)
                 )
-                imported_objs = context.selected_objects
-                imported_armature = next(
-                    (obj for obj in imported_objs if obj.type == 'ARMATURE'),
-                    None
-                )
-                if imported_armature is None:
-                    self.report(
-                        {'INFO'},
-                        "Imported animation is not valid. No armature found " +
-                        "in {}".format(filename)
-                    )
-                    bpy.ops.object.delete({'selected_objects': imported_objs})
-                    continue
+                bpy.ops.object.delete({'selected_objects': imported_objs})
+                continue
 
-                remove_list.extend(imported_objs)
+            remove_list.extend(imported_objs)
 
-                prepare_mixamo_rig(context, imported_armature)
-                imported_action = imported_armature.animation_data.action
-                imported_action.name = action_name
-                imported_action['is_nct_processed'] = True
+            prepare_anim_rig(context, imported_armature)
+            imported_action = imported_armature.animation_data.action
+            imported_action.name = action_name
+            if len(imported_action.groups) > 0:
+                imported_action.groups[0].name = action_name
+            imported_action['is_nct_processed'] = True
 
-                push_to_nla_stash(
-                    armature=target_armature,
-                    action=imported_action
-                )
+            push_to_nla_stash(
+                armature=target_armature,
+                action=imported_action
+            )
 
         # Delete Imported Armatures
         if remove_imports:
@@ -298,6 +216,8 @@ class NCT_OT_join_animations(Operator, ImportHelper):
         tool.selected_action_index = bpy.data.actions.find(TPOSE_ACTION_NAME)
         target_armature.animation_data.action = \
             bpy.data.actions[TPOSE_ACTION_NAME]
+
+        bpy.ops.object.mode_set(mode=current_mode)
 
         self.report({'INFO'}, "Animations Imported Successfully")
         return {'FINISHED'}

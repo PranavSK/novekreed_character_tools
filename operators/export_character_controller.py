@@ -2,8 +2,7 @@ import bpy
 import os
 
 from bpy.types import Operator
-
-from ..utils import validate_target_armature
+from ..utils.armature import validate_target_armature
 
 
 class NCT_OT_character_export(Operator):
@@ -29,8 +28,6 @@ class NCT_OT_character_export(Operator):
         character_export_path = bpy.path.abspath(tool.character_export_path)
 
         # Generate Filename To Export
-        if (character_export_format == 2):
-            character_name += ".dae"
         fileName = os.path.join(character_export_path, character_name)
 
         # GLTF
@@ -41,7 +38,7 @@ class NCT_OT_character_export(Operator):
                 export_frame_range=False,
                 export_force_sampling=False,
                 export_tangents=False,
-                export_image_format="JPEG",
+                export_image_format="PNG",
                 export_cameras=False,
                 export_lights=False
             )
@@ -54,7 +51,7 @@ class NCT_OT_character_export(Operator):
                 export_frame_range=False,
                 export_force_sampling=False,
                 export_tangents=False,
-                export_image_format="JPEG",
+                export_image_format="PNG",
                 export_cameras=False,
                 export_lights=False
             )
