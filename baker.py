@@ -3,10 +3,6 @@ from math import pi
 from mathutils import Quaternion
 
 
-ROOT_BAKER_NAME = 'NCT_root_baker'
-BONE_BAKER_NAME = 'NCT_{bone_name}_baker'
-
-
 def get_all_quaternion_curves(object):
     """
     Returns all quaternion fcurves of object/bones packed together in a touple

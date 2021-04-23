@@ -1,14 +1,11 @@
 import bpy
-import re
 
+from re import search as regex_search
 from .baker import (
-    BONE_BAKER_NAME,
-    ROOT_BAKER_NAME,
     apply_baker_to_bone,
     extract_loc_rot_from_bone,
     extract_loc_rot_from_obj
 )
-
 
 bone_map = {
     'Hips': 'pelvis',
@@ -68,21 +65,31 @@ bone_map = {
 bone_map_inverse = dict([reversed(i) for i in bone_map.items()])
 
 
-def get_hip_bone_name(armature):
-    hipname = ""
-    for hipname in (
-        "hips"
-        "Hips",
-        "mixamorig:Hips",
-        "mixamorig_Hips",
-        "pelvis",
-        "Pelvis"
-    ):
-        hips = armature.data.bones.get(hipname)
-        if hips != None:
-            break
+def get_mapped_bone_name(in_name):
+    new_name = bone_map.get(in_name)
+    if new_name:
+        return new_name
+    else:
+        return in_name
 
-    return hipname
+
+def guess_hip_bone_name(armature):
+    for hip_name in ("hips", "Hips", "pelvis", "Pelvis"):
+        hips = armature.data.bones.get(hip_name)
+        if hips != None:
+            return hip_name
+
+    return ""
+
+
+def remove_namespace(full_name):
+    if full_name in bone_map or full_name in bone_map_inverse:
+        return full_name
+    i = regex_search(r"[:_]", full_name[::-1])
+    if i:
+        return full_name[-(i.start())::]
+    else:
+        return full_name
 
 
 def rename_bones(armature, remove_namespace_only=False):
@@ -101,80 +108,13 @@ def rename_bones(armature, remove_namespace_only=False):
                     vertex_group.name = new_name
 
 
-def remove_namespace(full_name):
-    if full_name in bone_map or full_name in bone_map_inverse:
-        return full_name
-    i = re.search(r"[:_]", full_name[::-1])
-    if i:
-        return full_name[-(i.start())::]
-    else:
-        return full_name
-
-
-def get_mapped_bone_name(in_name):
-    new_name = bone_map.get(in_name)
-    if new_name:
-        return new_name
-    else:
-        return in_name
-
-
-def validate_target_armature(scene) -> bool:
-    """Validate if the target saved is existing."""
-    # clear all anims
-    tool = scene.novkreed_character_tools
-    obj = tool.target_object
-
-    valid = True
-
-    if obj is None:
-        valid = False
-    else:
-        if obj.name not in scene.objects:
-            bpy.data.objects.remove(obj)
-            valid = False
-
-    return valid
-
-
-def prepare_tpose_rig(context, armature):
-    rename_bones(armature)
-    current_mode = context.object.mode
-    bpy.ops.object.mode_set(mode='OBJECT')
-    armature.select_set(True)
-    context.view_layer.objects.active = armature
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-
-    # Remove fcurves on armature
-    fcurves = armature.animation_data.action.fcurves
-    for fcurve in fcurves:
-        if fcurve.data_path in ('location', 'rotation_quaternion', 'scale'):
-            fcurves.remove(fcurve)
-
-    # Reset the bone tpose to 0.
-    for bone in armature.data.bones:
-        data_path = (
-            'pose.bones[\"{}\"].location'.format(bone.name)
-        )
-        for axis in range(3):
-            fcurve = armature.animation_data.action.fcurves\
-                .find(data_path=data_path, index=axis)
-            if fcurve == None:
-                continue
-            for ind in range(len(fcurve.keyframe_points)):
-                # Set the pose position of the bone to 0
-                fcurve.keyframe_points[ind].co[1] = 0.0
-
-    bpy.ops.object.mode_set(mode=current_mode)
-
-
 def prepare_anim_rig(context, armature):
     rename_bones(armature)
-    bpy.ops.object.mode_set(mode='OBJECT')
+
     action = armature.animation_data.action
     start_frame = int(action.frame_range[0])
     end_frame = int(action.frame_range[1])
-    hipname = get_hip_bone_name(armature)
+    hip_bone_name = guess_hip_bone_name(armature)
 
     has_root_anim = False
     fcurves = action.fcurves
@@ -190,7 +130,7 @@ def prepare_anim_rig(context, armature):
             action=action,
             start_frame=start_frame,
             end_frame=end_frame,
-            baker_name=ROOT_BAKER_NAME
+            baker_name='NKT_root_baker'
         )
         for fcurve in fcurves:
             if fcurve.data_path in ('location', 'rotation_quaternion', 'scale'):
@@ -199,10 +139,10 @@ def prepare_anim_rig(context, armature):
     scale_baker = extract_loc_rot_from_bone(
         armature=armature,
         action=action,
-        bone_name=hipname,
+        bone_name=hip_bone_name,
         start_frame=start_frame,
         end_frame=end_frame,
-        baker_name=BONE_BAKER_NAME.format(bone_name="scale")
+        baker_name='NKT_scale_baker'
     )
 
     # Apply transformations on selected Armature
@@ -211,22 +151,12 @@ def prepare_anim_rig(context, armature):
     context.view_layer.objects.active = armature
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    target_bone_name = hipname
-    if armature.data.bones[hipname].parent:
-        target_bone_name = armature.data.bones[hipname].parent
-
-    apply_baker_to_bone(
-        baker=scale_baker,
-        armature=armature,
-        action=action,
-        target_bone_name=target_bone_name,
-        use_rot_offset=False,
-        start_frame=start_frame,
-        end_frame=end_frame
-    )
+    target_bone_name = hip_bone_name
+    if armature.data.bones[hip_bone_name].parent:
+        target_bone_name = armature.data.bones[hip_bone_name].parent
 
     if has_root_anim:
-        bpy.ops.nct.add_rootbone()
+        bpy.ops.nkt.add_rootbone()
         tool = context.scene.novkreed_character_tools
         target_armature = tool.target_object
         target_armature.animation_data.action = action
@@ -240,7 +170,15 @@ def prepare_anim_rig(context, armature):
             end_frame=end_frame
         )
 
-        action['has_root_motion'] = True
+    apply_baker_to_bone(
+        baker=scale_baker,
+        armature=armature,
+        action=action,
+        target_bone_name=target_bone_name,
+        use_rot_offset=False,
+        start_frame=start_frame,
+        end_frame=end_frame
+    )
 
     # Delete helpers
     bpy.ops.object.mode_set(mode='OBJECT')

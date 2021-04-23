@@ -1,82 +1,89 @@
 import bpy
 
-from .setup import NCT_AddonProperties
+from bpy.utils import register_class, unregister_class
 
-from .operators.export_character_controller import (
-    NCT_OT_character_export
+from .character import (
+    NKT_Character,
+    NKT_CharacterAction,
+
+    NKT_OT_init_character,
+    NKT_OT_load_character,
+    NKT_OT_search_character,
+    NKT_OT_character_menu,
+
+    NKT_OT_character_quick_export
 )
-from .operators.animation_controller import (
-    NCT_OT_animation_play,
-    NCT_OT_animation_stop,
-    NCT_OT_trim_animation,
-    NCT_OT_animation_delete
+from .rootmotion import (
+    NKT_RootmotionSettings,
+    NKT_OT_add_rootbone,
+    NKT_OT_add_rootmotion
 )
-from .operators.rootmotion_controller import (
-    NCT_OT_add_rootbone,
-    NCT_OT_add_rootmotion
+from .settings import NKT_Settings
+from .animation import (
+    NKT_OT_add_character_animation,
+    NKT_OT_remove_character_action,
+    NKT_OT_load_character_animation,
+    NKT_OT_character_actions_menu
 )
-from .operators.character_controller import (
-    NCT_OT_init_character,
-    NCT_OT_load_character,
-    NCT_OT_join_animations,
-    NCT_OT_armature_join_mesh
-)
-from .panels.main_panel import (
-    NCT_PT_main_panel,
+from .ui import (
+    NKT_PT_toolshelf,
     ACTION_UL_character_actions,
+    NKT_PT_character_panel
 )
 
+
+classes = (
+    NKT_CharacterAction,
+    NKT_Character,
+    NKT_RootmotionSettings,
+    NKT_Settings,
+
+    NKT_OT_init_character,
+    NKT_OT_load_character,
+
+    NKT_OT_add_character_animation,
+    NKT_OT_remove_character_action,
+    NKT_OT_load_character_animation,
+
+    NKT_OT_character_quick_export,
+
+    NKT_OT_add_rootbone,
+    NKT_OT_add_rootmotion,
+
+    NKT_OT_search_character,
+    NKT_OT_character_menu,
+    NKT_OT_character_actions_menu,
+
+    NKT_PT_toolshelf,
+    ACTION_UL_character_actions,
+    NKT_PT_character_panel,
+)
 
 bl_info = {
-    "name": "Novkreed Character Tools",
-    "version": (0, 1, 1),
+    "name": "Novkreed Tools",
+    "version": (0, 6, 0),
     "blender": (2, 92, 0),
-    "location": "3D View > Tools > Character",
+    "location": "3D View > Tools > Novkreed",
     "author": "Pranav S Koundinya",
     "category": "Tools"
 }
 
 
-classes = (
-    # Panels
-    NCT_PT_main_panel,
-    # UI Lists
-    ACTION_UL_character_actions,
-    # Character Controller
-    NCT_OT_init_character,
-    NCT_OT_load_character,
-    NCT_OT_join_animations,
-    NCT_OT_armature_join_mesh,
-    # Animation Controller
-    NCT_OT_animation_play,
-    NCT_OT_animation_stop,
-    NCT_OT_trim_animation,
-    NCT_OT_animation_delete,
-    # Quick Export
-    NCT_OT_character_export,
-    # RootMotion Controller
-    NCT_OT_add_rootbone,
-    NCT_OT_add_rootmotion,
-    # Default Add-On Properties
-    NCT_AddonProperties
-)
-
-
 def register():
-    from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
-    bpy.types.Scene.novkreed_character_tools = bpy.props.PointerProperty(
-        type=NCT_AddonProperties,
-        name="NCT Addon Properties"
+
+    bpy.types.Scene.nkt_settings = bpy.props.PointerProperty(
+        type=NKT_Settings,
+        name="Novkreed Tool Settings"
     )
 
 
 def unregister():
-    from bpy.utils import unregister_class
-    for cls in reversed(classes):
+    for cls in classes:
         unregister_class(cls)
-    del bpy.types.Scene.novkreed_character_tools
+
+    del bpy.types.Scene.nkt_settings
 
 
 if __name__ == "__main__":
