@@ -42,6 +42,20 @@ class NKT_CharacterAction(PropertyGroup):
         update=on_action_name_updated
     )
 
+    rootmotion_type: EnumProperty(
+        items=[
+            ('IN_PLACE', "In Place", "No rootmotion configured.",
+             'EMPTY_SINGLE_ARROW', 0),
+            ('ROOT_OBJECT', "Object Rootmotion",
+             "Rootmotion configured on object.", 'OUTLINER_DATA_EMPTY', 1),
+            ('ROOT_BONE', "Bone Rootmotion",
+             "Rootmotion configured on a bone.", 'GROUP_BONE', 2)
+        ],
+        name="Rootmotion Type",
+        description="The type of rootmotion configured for the action."
+        # default='IN_PLACE'
+    )
+
 
 class NKT_Character(PropertyGroup):
     def poll_character_armature_valid(self, object):
@@ -58,6 +72,13 @@ class NKT_Character(PropertyGroup):
         name="Character Actions",
         description="Collection of actions assigned to target character."
     )
+
+    def get_action_index(self, name):
+        idx = -1
+        for i, action in enumerate(self.actions):
+            if action.name == name:
+                idx = i
+        return idx
 
     def on_active_action_index_updated(self, context):
         if self.active_action_index >= 0:
@@ -83,7 +104,7 @@ class NKT_Character(PropertyGroup):
         curr_action = self.armature.animation_data.action
         active_action = self.get_active_action()
         if curr_action and active_action and curr_action != active_action.action:
-            self.active_action_index = self.actions.find(curr_action.name)
+            self.active_action_index = self.get_action_index(curr_action.name)
 
     def set_armature_name(self, value):
         self.armature.name = value
@@ -222,6 +243,7 @@ class NKT_OT_init_character(Operator):
 
     def invoke(self, context, event):
         self.target_name = context.view_layer.objects.active.name
+        return self.execute(context)
 
 
 class NKT_OT_load_character(Operator, ImportHelper):
@@ -333,6 +355,9 @@ class NKT_OT_character_quick_export(Operator):
         fileName = os.path.join(
             bpy.path.abspath(character.export_path), character.export_name
         )
+
+        # Push animation to NLA Tracks
+        bpy.ops.nkt.character_push_to_nla()
 
         bpy.ops.export_scene.gltf(
             filepath=fileName,

@@ -227,7 +227,6 @@ def apply_baker_to_bone(
     armature,
     action,
     target_bone_name,
-    use_rot_offset,
     start_frame,
     end_frame
 ):
@@ -245,11 +244,22 @@ def apply_baker_to_bone(
     bpy.ops.pose.select_all(action='DESELECT')
     pose_bone.bone.select = True
     armature.data.bones.active = pose_bone.bone
-    bpy.ops.pose.constraint_add(type='COPY_LOCATION')
-    pose_bone.constraints["Copy Location"].target = baker
-    bpy.ops.pose.constraint_add(type='COPY_ROTATION')
-    pose_bone.constraints["Copy Rotation"].target = baker
-    pose_bone.constraints["Copy Rotation"].use_offset = use_rot_offset
+    bpy.ops.pose.constraint_add(type='COPY_TRANSFORMS')
+    pose_bone.constraints["Copy Transforms"].target = baker
+
+    # Clear all existing loc and rot frames
+    fcurves_to_remove = []
+    for fcurve in action.fcurves:
+        data_path = fcurve.data_path.split("\"", maxsplit=2)
+        if (
+            len(data_path) == 3 and
+            data_path[0] == "pose.bones[" and
+            data_path[1] == target_bone_name
+        ):
+            fcurves_to_remove.append(fcurve)
+
+    for fcurve in fcurves_to_remove:
+        action.fcurves.remove(fcurve)
 
     bpy.ops.nla.bake(
         frame_start=start_frame,

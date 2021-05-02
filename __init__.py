@@ -23,7 +23,13 @@ from .animation import (
     NKT_OT_add_character_animation,
     NKT_OT_remove_character_action,
     NKT_OT_load_character_animation,
+    NKT_OT_character_action_move,
+    NKT_OT_character_push_to_nla,
     NKT_OT_character_actions_menu
+)
+from .armature import (
+    NKT_OT_mixamo_rename_bones,
+    NKT_OT_mixamo_prepare_anim_rig
 )
 from .ui import (
     NKT_PT_toolshelf,
@@ -38,13 +44,18 @@ classes = (
     NKT_RootmotionSettings,
     NKT_Settings,
 
+    NKT_OT_mixamo_rename_bones,
+    NKT_OT_mixamo_prepare_anim_rig,
+
     NKT_OT_init_character,
     NKT_OT_load_character,
 
     NKT_OT_add_character_animation,
     NKT_OT_remove_character_action,
     NKT_OT_load_character_animation,
+    NKT_OT_character_action_move,
 
+    NKT_OT_character_push_to_nla,
     NKT_OT_character_quick_export,
 
     NKT_OT_add_rootbone,

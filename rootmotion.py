@@ -28,20 +28,24 @@ def bake_rootmotion(
     if not end_frame:
         end_frame = int(action.frame_range[1])
 
-    # Create helper to bake the root motion
-    root_baker = extract_constrained_from_bone(
-        armature=armature,
-        action=action,
-        bone_name=hip_bone_name,
-        use_x=use_x,
-        use_y=use_y,
-        use_z=use_z,
-        on_ground=on_ground,
-        use_rot=use_rot,
-        start_frame=start_frame,
-        end_frame=end_frame,
-        baker_name='NKT_root_baker'
-    )
+    # Check if root_baker exists (To allow custom constraints on root)
+    root_baker = bpy.data.objects.get('NKT_root_baker')
+
+    if not root_baker:
+        # Create helper to bake the root motion
+        root_baker = extract_constrained_from_bone(
+            armature=armature,
+            action=action,
+            bone_name=hip_bone_name,
+            use_x=use_x,
+            use_y=use_y,
+            use_z=use_z,
+            on_ground=on_ground,
+            use_rot=use_rot,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            baker_name='NKT_root_baker'
+        )
 
     # Create helper to bake hipmotion in Worldspace
     hips_baker = extract_loc_rot_from_bone(
@@ -59,7 +63,6 @@ def bake_rootmotion(
         armature=armature,
         action=action,
         target_bone_name=root_bone_name,
-        use_rot_offset=True, # Apply to maintain parent rotation.
         start_frame=start_frame,
         end_frame=end_frame
     )
@@ -71,7 +74,6 @@ def bake_rootmotion(
         armature=armature,
         action=action,
         target_bone_name=hip_bone_name,
-        use_rot_offset=False, # Ignore as root is adjusted.
         start_frame=start_frame,
         end_frame=end_frame
     )
@@ -135,7 +137,7 @@ class NKT_OT_add_rootbone(Operator):
         # Bone Setup
         rootmotion_bone = editbones.new(character.root_bone_name)
         rootmotion_bone.head = (0.0, 0.0, 0.0)
-        rootmotion_bone.tail = (0.0, 0.0, 0.2)
+        rootmotion_bone.tail = (0.0, 0.2, 0.0)
 
         editbones[character.hip_bone_name].parent = rootmotion_bone
         bpy.ops.object.mode_set(mode=current_mode)
@@ -157,8 +159,7 @@ class NKT_OT_add_rootmotion(Operator):
         context.view_layer.objects.active = character.armature
         current_mode = context.object.mode
 
-        is_bone_exists = character.root_bone_name in character.armature.pose.bones.keys()
-        if not is_bone_exists:
+        if not character.root_bone_name in character.armature.pose.bones.keys():
             bpy.ops.nkt.character_add_rootbone()
 
         bake_rootmotion(
@@ -173,6 +174,8 @@ class NKT_OT_add_rootmotion(Operator):
             use_rot=settings.rootmotion.use_rotation,
             start_frame=settings.rootmotion.start_frame
         )
+
+        character.get_active_action().rootmotion_type = 'ROOT_BONE'
 
         bpy.ops.object.mode_set(mode=current_mode)
 

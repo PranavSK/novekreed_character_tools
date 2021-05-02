@@ -1,6 +1,4 @@
-import bpy
-
-from bpy.types import UIList, Panel
+from bpy.types import UILayout, UIList, Panel
 
 
 class NKT_PT_toolshelf(Panel):
@@ -25,7 +23,11 @@ class ACTION_UL_character_actions(UIList):
         active_data,
         active_propname,
         index
-    ): layout.prop(item, "name", text="", emboss=False, icon='ANIM_DATA')
+    ):
+        rootmotion_icon = UILayout.enum_item_icon(
+            item, 'rootmotion_type', item.rootmotion_type)
+        layout.prop(data=item, property='name', emboss=False,
+                    text="", icon_value=rootmotion_icon)
 
 
 class NKT_PT_character_panel(Panel):
@@ -39,7 +41,6 @@ class NKT_PT_character_panel(Panel):
         settings.validate_characters()
 
         layout = self.layout
-        # box.label(text="Active Character", icon='ARMATURE_DATA')
         layout.operator_menu_enum(
             operator='nkt.character_menu',
             property='menu_options',
@@ -47,12 +48,10 @@ class NKT_PT_character_panel(Panel):
         )
 
         if len(settings.characters) == 0:
-            # layout.label(text="There are no characters.")
             return
 
         character = settings.get_active_character()
         if character is None:
-            # layout.label(text="No active character selected.")
             return
 
         layout.prop(
@@ -64,17 +63,9 @@ class NKT_PT_character_panel(Panel):
 
         layout.separator()
 
-        layout.operator_menu_enum(
-            operator='nkt.character_actions_menu',
-            property='menu_options',
-            icon='COMMUNITY'
-        )
-
-        if len(character.actions) == 0:
-            # layout.label(text="No actions added to active character.")
-            return
-
-        layout.template_list(
+        column = layout.column(align=True)
+        column.label(text="Character Actions", icon='ANIM')
+        column.template_list(
             listtype_name='ACTION_UL_character_actions',
             list_id='nkt_active_character_actions',
             dataptr=character,
@@ -82,6 +73,16 @@ class NKT_PT_character_panel(Panel):
             active_dataptr=character,
             active_propname='active_action_index'
         )
+        row = column.row(align=True)
+        row.operator_enum(
+            operator='nkt.character_actions_menu',
+            property='menu_options',
+            # icon='ANIM'
+            icon_only=True
+        )
+
+        if len(character.actions) == 0:
+            return
 
         if character.get_active_action():
             layout.separator()
